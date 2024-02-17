@@ -1,0 +1,31 @@
+includes:
+    - ./vendor/nunomaduro/larastan/extension.neon
+
+parameters:
+    phpVersion: 80000
+
+    # Setting it to 5, which works as a reasonable default even for continuous integration.
+    # On a local developer environment, this can be set to 6 or 7.
+    # Setting it higher than that (9 is the strictest level) is a nightmare, complaining about
+    # stuff that we can't even control (example: return value of Laravel config() function)
+    level: 5
+
+    paths:
+        - app
+        - tests
+
+    tmpDir: storage/framework/cache/phpstan
+
+    databaseMigrationsPath:
+        - database/migrations
+
+    checkModelProperties: true
+
+    #ignoreErrors:
+
+    #excludePaths:
+
+    #checkMissingIterableValueType: false
+
+	# more info: https://phpstan.org/user-guide/output-format#opening-file-in-an-editor
+    #editorUrl: 'vscode://file/%%file%%:%%line%%'

@@ -1,0 +1,107 @@
+# File for Github Actions that will run several automated checks, including
+# static analysis, tests, and style checking.
+# A good tutorial on Laravel and Github Actions:
+# https://www.twilio.com/blog/build-test-deploy-laravel-application-github-actions
+
+name: Analyze-Code
+
+# Sets the git events and branches that will make this Actions workflow run.
+# Can limit the workflow to run on certain branches by putting stuff like:
+# on:
+#   push:
+#     branches: [master]
+#   pull_request:
+#     branches: [master]
+on: [push]
+
+jobs:
+  analyze-code:
+    name: Checking Tests
+    runs-on: ubuntu-22.04
+    steps:
+      #################### Start Environment Setup ####################
+      - name: Checkout repository
+        uses: actions/checkout@v3.3.0
+
+      - name: Setting PHP cache environment - Part 1
+        id: extcache
+        uses: shivammathur/cache-extensions@1.9.0
+        with:
+          php-version: '8.1'
+          extensions: sqlsrv, pdo_sqlsrv
+          # `key` can be any string; change to clear the extension cache
+          key: extension-cache-20230313
+
+      - name: Setting PHP cache environment - Part 2
+        uses: actions/cache@v3.3.1
+        with:
+          path: ${{ steps.extcache.outputs.dir }}
+          key: ${{ steps.extcache.outputs.key }}
+          restore-keys: ${{ steps.extcache.outputs.key }}
+
+      - name: Installing PHP extensions
+        uses: shivammathur/setup-php@2.24.0
+        with:
+          php-version: '8.1'
+          extensions: sqlsrv, pdo_sqlsrv
+          # disables Xdebug code coverage to make these scripts faster
+          coverage: none
+
+      - name: Copying .env.testing file
+        run: cp .env.testing.example .env.testing
+
+      - name: Setting directory permissions
+        run: chmod -R 777 storage bootstrap/cache
+
+      - name: Getting Composer cache directory
+        id: composer-cache
+        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+
+      - name: Checking Composer cache
+        uses: actions/cache@v3.3.1
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Running Composer install
+        run: composer install --no-interaction --prefer-dist
+
+
+      #################### Start PHPUnit Setup and Execution ####################
+      - name: Creating encryption key for test env
+        run: php artisan key:generate --ansi
+        env:
+          APP_ENV: testing
+
+      - name: Creating test database
+        run: touch database/test_database.sqlite
+
+      - name: Running migrations for test env
+        run: php artisan migrate
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/test_database.sqlite
+
+      - name: Running PHPUnit tests
+        run: ./vendor/bin/phpunit
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/test_database.sqlite
+
+      # TODO: UPGRADE THIS TO USE: https://github.com/slackapi/slack-github-action#technique-3-slack-incoming-webhook
+      - name: Notifying failed tests
+        if: failure()
+        # more info: https://github.com/marketplace/actions/slack-notify
+        uses: rtCamp/action-slack-notify@v2.2.0
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: webapps
+          SLACK_USERNAME: 'Failed Tests'
+          SLACK_ICON_EMOJI: ":warning:"
+          SLACK_COLOR: '#E8912D'
+          SLACK_TITLE: 'An automated test failed for commit: '
+          SLACK_FOOTER: ''
+          MSG_MINIMAL: actions url,commit
